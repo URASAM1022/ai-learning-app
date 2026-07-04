@@ -1,7 +1,7 @@
 {
-  "name": "まいにちAIがくしゅう 完成度確認版",
+  "name": "まいにちAIがくしゅう 国語算数版",
   "short_name": "AIがくしゅう",
-  "description": "小学1年生と4年生向けの完成度確認用家庭学習PWA",
+  "description": "小学1年生と4年生の国語・算数に集中した家庭学習PWA",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

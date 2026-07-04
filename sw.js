@@ -1,4 +1,4 @@
-const CACHE_NAME = "daily-ai-study-preview-v2";
+const CACHE_NAME = "daily-ai-study-kokugo-math-v3";
 const ASSETS = [
   "./",
   "./index.html",
@@ -8,9 +8,7 @@ const ASSETS = [
   "./icons/icon.svg",
   "./icons/icon-192.svg",
   "./icons/icon-512.svg",
-  "./icons/apple-touch-icon.svg",
-  "./problems/grade1.json",
-  "./problems/grade4.json"
+  "./icons/apple-touch-icon.svg"
 ];
 
 self.addEventListener("install", (event) => {

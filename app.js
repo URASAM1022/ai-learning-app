@@ -2,10 +2,12 @@
   "use strict";
 
   const GRADES = [1, 4];
+  const SUBJECT_MODES = ["国語", "算数", "ミックス"];
   const POINTS = 5;
-  const HISTORY_KEY = "dailyAiStudy.preview.history.v2";
+  const QUESTIONS_PER_TEST = 20;
+  const HISTORY_KEY = "dailyAiStudy.kokugoMath.history.v3";
   const app = document.querySelector("#app");
-  const state = { grade: null, problems: [], reviewMode: false };
+  const state = { grade: null, subjectMode: null, problems: [], reviewMode: false };
 
   document.querySelector("#homeButton").addEventListener("click", showHome);
   document.querySelector("#historyButton").addEventListener("click", showHistory);
@@ -23,8 +25,8 @@
     const node = panel("hero");
     node.innerHTML = `
       <div>
-        <h2>1年生と4年生だけを、完成レベルで確認。</h2>
-        <p>今日の20問を1ページで解きます。選ぶ問題、書く問題、図や表を見て答える問題を組み合わせ、100点満点で採点します。</p>
+        <h2>国語と算数だけを、完成レベルで。</h2>
+        <p>1年生と4年生にしぼった確認版です。国語だけ、算数だけ、ミックスを選び、毎回20問を100点満点で採点します。</p>
         <div class="action-row">
           <button class="button" type="button" data-start>学年をえらぶ</button>
           <button class="button secondary" type="button" data-history>学習履歴</button>
@@ -45,54 +47,52 @@
       const button = document.createElement("button");
       button.className = "button tile";
       button.type = "button";
-      button.innerHTML = `<strong>${grade}年生</strong><span>今日の20問</span>`;
-      button.addEventListener("click", () => startQuiz(grade));
+      button.innerHTML = `<strong>${grade}年生</strong><span>国語・算数 100問ずつ</span>`;
+      button.addEventListener("click", () => {
+        state.grade = grade;
+        showSubjectModeSelect();
+      });
       grid.appendChild(button);
     });
   }
 
-  async function startQuiz(grade, reviewProblems) {
-    state.grade = grade;
-    state.reviewMode = Boolean(reviewProblems);
+  function showSubjectModeSelect() {
     app.innerHTML = "";
-    panel().innerHTML = `<h2>問題を用意しています</h2><p class="mini">少しだけ待ってください。</p>`;
-    try {
-      const all = reviewProblems || await loadProblems(grade);
-      state.problems = reviewProblems ? all : dailyOrder(all, grade);
-      showQuiz();
-    } catch (error) {
-      app.innerHTML = "";
-      panel().innerHTML = `<h2>読み込みエラー</h2><p>問題データを読み込めませんでした。</p>`;
-    }
-  }
-
-  async function loadProblems(grade) {
-    const response = await fetch(`./problems/grade${grade}.json`, { cache: "no-cache" });
-    if (!response.ok) throw new Error("load failed");
-    const data = await response.json();
-    validateProblems(data, grade);
-    return data;
-  }
-
-  function validateProblems(data, grade) {
-    const required = ["id", "grade", "subject", "type", "question", "answer", "acceptableAnswers", "explanation", "hint", "visualType", "visualData", "qualityChecked", "copyrightSafe"];
-    const ids = new Set();
-    data.forEach((item) => {
-      required.forEach((key) => {
-        if (!(key in item)) throw new Error(`${item.id || "unknown"} missing ${key}`);
-      });
-      if (item.grade !== grade || ids.has(item.id)) throw new Error("invalid problem");
-      ids.add(item.id);
-      if (item.type === "choice" && (!Array.isArray(item.choices) || !item.choices.includes(item.answer))) throw new Error("bad choice problem");
-      if (!Array.isArray(item.acceptableAnswers) || !item.acceptableAnswers.length) throw new Error("bad answers");
-      if (item.qualityChecked !== true || item.copyrightSafe !== true) throw new Error("unchecked problem");
+    const node = panel();
+    node.innerHTML = `
+      <div class="meta-row"><span class="badge">${state.grade}年生</span></div>
+      <h2>テストをえらんでください</h2>
+      <div class="grid"></div>
+    `;
+    const grid = node.querySelector(".grid");
+    SUBJECT_MODES.forEach((mode) => {
+      const button = document.createElement("button");
+      button.className = "button tile";
+      button.type = "button";
+      const sub = mode === "ミックス" ? "国語10問 + 算数10問" : `${mode}から20問`;
+      button.innerHTML = `<strong>${mode}</strong><span>${sub}</span>`;
+      button.addEventListener("click", () => startQuiz(state.grade, mode));
+      grid.appendChild(button);
     });
   }
 
-  function dailyOrder(items, grade) {
+  function startQuiz(grade, subjectMode, reviewProblems) {
+    state.grade = grade;
+    state.subjectMode = subjectMode;
+    state.reviewMode = Boolean(reviewProblems);
+    state.problems = reviewProblems ? reviewProblems : pickProblems(getProblemBank(grade), grade, subjectMode);
+    showQuiz();
+  }
+
+  function pickProblems(bank, grade, subjectMode) {
     const today = new Date();
-    const key = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}:${grade}`;
-    return seededShuffle(items, hashString(key)).slice(0, 20);
+    const dateKey = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}:${grade}:${subjectMode}`;
+    if (subjectMode === "ミックス") {
+      const japanese = seededShuffle(bank.filter((p) => p.subject === "国語"), hashString(`${dateKey}:ja`)).slice(0, 10);
+      const math = seededShuffle(bank.filter((p) => p.subject === "算数"), hashString(`${dateKey}:math`)).slice(0, 10);
+      return seededShuffle(japanese.concat(math), hashString(`${dateKey}:mix`));
+    }
+    return seededShuffle(bank.filter((p) => p.subject === subjectMode), hashString(dateKey)).slice(0, QUESTIONS_PER_TEST);
   }
 
   function showQuiz() {
@@ -101,6 +101,7 @@
     intro.innerHTML = `
       <div class="meta-row">
         <span class="badge">${state.grade}年生</span>
+        <span class="badge">${state.subjectMode}</span>
         <span class="badge">${state.reviewMode ? "復習" : "今日の20問"}</span>
         <span class="badge">1問${POINTS}点</span>
       </div>
@@ -113,10 +114,10 @@
     state.problems.forEach((problem, index) => form.appendChild(questionCard(problem, index)));
     const actions = document.createElement("section");
     actions.className = "panel";
-    actions.innerHTML = `<div class="action-row"><button class="button" type="submit">採点する</button><button class="button secondary" type="button" data-home>ホーム</button></div>`;
+    actions.innerHTML = `<div class="action-row"><button class="button" type="submit">採点する</button><button class="button secondary" type="button" data-select>テストをえらぶ</button></div>`;
     form.appendChild(actions);
     form.addEventListener("submit", gradeQuiz);
-    actions.querySelector("[data-home]").addEventListener("click", showHome);
+    actions.querySelector("[data-select]").addEventListener("click", showSubjectModeSelect);
     app.appendChild(form);
   }
 
@@ -149,7 +150,7 @@
 
   function choiceUi(problem) {
     return `<div class="choices" role="radiogroup" aria-label="答え">
-      ${problem.choices.map((choice, i) => `
+      ${problem.choices.map((choice) => `
         <label class="choice">
           <input type="radio" name="${problem.id}" value="${escapeHtml(choice)}">
           <span>${escapeHtml(choice)}</span>
@@ -228,13 +229,13 @@
       <div class="weak-list">${weakHtml(subjectStats)}</div>
       <div class="action-row" style="margin-top:16px">
         ${wrong.length ? '<button class="button warning" type="button" data-review>まちがえた問題だけ復習</button>' : '<span class="badge good">全問正解</span>'}
-        <button class="button secondary" type="button" data-grade>学年をえらぶ</button>
+        <button class="button secondary" type="button" data-select>テストをえらぶ</button>
       </div>
     `;
     app.prepend(node);
     const review = node.querySelector("[data-review]");
-    if (review) review.addEventListener("click", () => startQuiz(state.grade, wrong));
-    node.querySelector("[data-grade]").addEventListener("click", showGradeSelect);
+    if (review) review.addEventListener("click", () => startQuiz(state.grade, state.subjectMode, wrong));
+    node.querySelector("[data-select]").addEventListener("click", showSubjectModeSelect);
   }
 
   function subjectStatHtml(stats) {
@@ -246,15 +247,14 @@
 
   function weakHtml(stats) {
     const weak = Object.keys(stats).map((subject) => ({ subject, rate: stats[subject].correct / stats[subject].total }))
-      .sort((a, b) => a.rate - b.rate)
-      .slice(0, 2);
+      .sort((a, b) => a.rate - b.rate);
     return weak.map((item) => `<div class="history-item"><div><strong>${item.subject}</strong><div class="mini">${weakMessage(item.subject, item.rate)}</div></div><span class="badge">${Math.round(item.rate * 100)}%</span></div>`).join("");
   }
 
   function weakMessage(subject, rate) {
     if (rate >= .8) return `${subject}はよくできています。次は説明まで言えるか試しましょう。`;
     if (rate >= .5) return `${subject}はあと少しです。まちがえた問題をもう一度見直しましょう。`;
-    return `${subject}を重点復習しましょう。ヒントと図を見ながら、答え方を確認します。`;
+    return `${subject}を重点復習しましょう。ヒントと図を見ながら答え方を確認します。`;
   }
 
   function saveHistory(score, total, subjectStats) {
@@ -262,12 +262,13 @@
     history.unshift({
       date: new Date().toLocaleDateString("ja-JP"),
       grade: state.grade,
+      subjectMode: state.subjectMode,
       score,
       total,
       rate: Math.round((score / total) * 100),
       subjects: subjectStats
     });
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 40)));
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 60)));
   }
 
   function getHistory() {
@@ -283,7 +284,7 @@
       <div class="history-list">
         ${history.length ? history.map((item) => `
           <div class="history-item">
-            <div><strong>${item.date} ${item.grade}年生</strong><div class="mini">点数 ${item.score}/${item.total}</div></div>
+            <div><strong>${item.date} ${item.grade}年生 ${item.subjectMode || ""}</strong><div class="mini">点数 ${item.score}/${item.total}</div></div>
             <span class="badge">${item.rate}%</span>
           </div>
         `).join("") : '<p class="mini">まだ学習履歴はありません。</p>'}
@@ -310,6 +311,147 @@
     node.className = `panel${extraClass ? ` ${extraClass}` : ""}`;
     app.appendChild(node);
     return node;
+  }
+
+  function getProblemBank(grade) {
+    const bank = grade === 1 ? grade1Bank() : grade4Bank();
+    validateBank(bank, grade);
+    return bank;
+  }
+
+  function validateBank(bank, grade) {
+    const ids = new Set();
+    const counts = { "国語": 0, "算数": 0 };
+    bank.forEach((p) => {
+      if (p.grade !== grade || ids.has(p.id)) throw new Error("problem bank error");
+      ids.add(p.id);
+      counts[p.subject] += 1;
+      if (!p.answer || !Array.isArray(p.acceptableAnswers) || !p.acceptableAnswers.length) throw new Error(`answer error ${p.id}`);
+      if (p.type === "choice" && (!Array.isArray(p.choices) || !p.choices.includes(p.answer))) throw new Error(`choice error ${p.id}`);
+    });
+    if (counts["国語"] !== 50 || counts["算数"] !== 50) throw new Error("problem count error");
+  }
+
+  function makeProblem(id, grade, subject, type, question, answer, acceptableAnswers, explanation, hint, visualType, visualData, extra) {
+    return Object.assign({
+      id, grade, subject, type, question, answer, acceptableAnswers,
+      explanation, hint, visualType, visualData,
+      qualityChecked: true, copyrightSafe: true
+    }, extra || {});
+  }
+
+  function grade1Bank() {
+    const ja = [
+      ...[
+        ["はな","🌸","さいしょのおとは「は」です。"],["ねこ","🐱","にゃあとないています。"],["うみ","🌊","なみがよせるところです。"],["やま","⛰️","たかくもり上がったところです。"],["つき","🌙","よるのそらに見えます。"],["いぬ","🐶","わんとなくどうぶつです。"],["あめ","☔","そらから水がおちます。"],["くも","☁️","そらにうかびます。"],["ほし","⭐","よるにきらきら見えます。"],["もも","🍑","あまいくだものです。"]
+      ].map((x, i) => makeProblem(`g1-ja-word-${i + 1}`, 1, "国語", "input", `えをみて、ことばをひらがなでかきましょう。`, x[0], [x[0]], `えは「${x[0]}」です。ひらがなでていねいにかきます。`, x[2], "englishPictureCard", { icon: x[1], word: "?", label: "なまえをかく" })),
+      ...[
+        ["さくら","さ"],["とけい","と"],["からす","か"],["みかん","み"],["すいか","す"],["ひこうき","ひ"],["えんぴつ","え"],["おにぎり","お"],["かえる","か"],["たいこ","た"]
+      ].map((x, i) => makeProblem(`g1-ja-first-${i + 1}`, 1, "国語", "choice", `「${x[0]}」のさいしょのおとはどれですか。`, x[1], [x[1]], `「${x[0]}」は、さいしょに「${x[1]}」とよみます。`, `ゆっくり「${x[0]}」とよみましょう。`, "englishPictureCard", { icon: ["🌸","⏰","🐦","🍊","🍉","✈️","✏️","🍙","🐸","🥁"][i], word: x[0], label: "さいしょのおと" }, { choices: [x[1], kanaShift(x[1], 1), kanaShift(x[1], 2)] })),
+      ...[
+        ["あし","し"],["いす","す"],["かさ","さ"],["つくえ","え"],["はっぱ","ぱ"],["しま","ま"],["そら","ら"],["ふね","ね"],["こま","ま"],["ゆき","き"]
+      ].map((x, i) => makeProblem(`g1-ja-last-${i + 1}`, 1, "国語", "choice", `「${x[0]}」のさいごのおとはどれですか。`, x[1], [x[1]], `「${x[0]}」のさいごは「${x[1]}」です。`, `ことばをおとにわけてよみましょう。`, "englishPictureCard", { icon: ["🦶","🪑","☂️","📘","🍃","🏝️","☀️","⛵","🌀","❄️"][i], word: x[0], label: "さいごのおと" }, { choices: [x[1], kanaShift(x[1], 3), kanaShift(x[1], 4)] })),
+      ...[
+        ["は し", "はし"],["と り", "とり"],["く つ", "くつ"],["み ず", "みず"],["か ぎ", "かぎ"],["や ね", "やね"],["ふ く", "ふく"],["た こ", "たこ"],["な し", "なし"],["ま ど", "まど"]
+      ].map((x, i) => makeProblem(`g1-ja-join-${i + 1}`, 1, "国語", "input", `もじをつなげて、ことばをかきましょう。「${x[0]}」`, x[1], [x[1]], `「${x[0]}」をつなげると「${x[1]}」になります。`, "あいだをあけずにかきます。", "table", { headers: ["もじ", "ことば"], rows: [[x[0], "?"]] })),
+      ...[
+        ["わたし（　）ほんをよむ。","は","だれがするかをあらわすときは「は」をつかいます。"],["ねこ（　）ねる。","が","ねこがどうするかをあらわしています。"],["りんご（　）たべる。","を","たべるものをあらわすときは「を」です。"],["がっこう（　）いく。","へ","行くところをあらわすときは「へ」をつかいます。"],["ともだち（　）あそぶ。","と","いっしょにする人をあらわすときは「と」です。"],["つくえ（　）うえ。","の","つくえと上をつなぐことばです。"],["あめ（　）ふる。","が","何がふるのかをあらわします。"],["みず（　）のむ。","を","のむものをあらわします。"],["いえ（　）かえる。","へ","むかうところをあらわします。"],["はな（　）さく。","が","何がさくのかをあらわします。"]
+      ].map((x, i) => makeProblem(`g1-ja-particle-${i + 1}`, 1, "国語", i % 2 ? "input" : "choice", `${x[0]}（　）に入るひらがなをかきましょう。`, x[1], [x[1]], x[2], "文をこえに出してよみましょう。", "table", { headers: ["文", "入ることば"], rows: [[x[0], "?"]] }, i % 2 ? {} : { choices: [x[1], "を", "に"].filter((v, idx, arr) => arr.indexOf(v) === idx) }))
+    ];
+
+    const math = [
+      ...[
+        ["🍎",6,"りんご"],["🍊",8,"みかん"],["⭐",7,"ほし"],["🌼",9,"はな"],["🍓",5,"いちご"],["🟡",10,"まる"],["🍙",4,"おにぎり"],["🐟",6,"さかな"],["🎈",3,"ふうせん"],["🧁",8,"ケーキ"]
+      ].map((x, i) => makeProblem(`g1-ma-count-${i + 1}`, 1, "算数", "input", `${x[2]}は、ぜんぶでなんこですか。すうじでかきましょう。`, String(x[1]), [String(x[1]), `${x[1]}こ`], `${x[2]}をひとつずつかぞえると、${x[1]}こです。`, "ゆびでさしながらかぞえましょう。", "countingObjects", { icon: x[0], count: x[1] })),
+      ...[
+        ["あかいはなが3こ、しろいはなが2こあります。ぜんぶでなんこですか。",5,"🌼"],["えんぴつが4ほん、あとから3ほんふえました。なんほんですか。",7,"✏️"],["あめが2こ、グミが6こあります。ぜんぶでなんこですか。",8,"🍬"],["とりが5わ、あとから1わきました。なんわですか。",6,"🐦"],["つみきが4こ、さらに4こあります。ぜんぶでなんこですか。",8,"🧱"],["バスに3にん、あとから5にんのりました。なんにんですか。",8,"🚌"],["かごにりんごが7こ、さらに2こ入れます。なんこですか。",9,"🍎"],["シールが6まい、もう3まいもらいました。なんまいですか。",9,"⭐"],["どんぐりが5こ、あとから4こ見つけました。なんこですか。",9,"🟤"],["ねこが2ひき、いぬが3びきいます。ぜんぶでなんびきですか。",5,"🐱"]
+      ].map((x, i) => makeProblem(`g1-ma-add-${i + 1}`, 1, "算数", "input", x[0], String(x[1]), [String(x[1]), `${x[1]}こ`, `${x[1]}ほん`, `${x[1]}にん`, `${x[1]}まい`, `${x[1]}ひき`], `あわせる問題です。答えは${x[1]}です。`, "はじめの数から、ふえた分をかぞえましょう。", "countingObjects", { icon: x[2], count: x[1] })),
+      ...[
+        ["クッキーが7こあります。2こたべると、のこりはなんこですか。",5,"🍪"],["ふうせんが6こあります。1こわれると、のこりはなんこですか。",5,"🎈"],["さかなが9ひきいます。4ひきにげました。のこりはなんびきですか。",5,"🐟"],["シールが8まいあります。3まいつかうと、のこりはなんまいですか。",5,"⭐"],["えんぴつが10ぽんあります。6ぽんしまうと、外にあるのはなんぼんですか。",4,"✏️"],["あめが5こあります。2こわけると、のこりはなんこですか。",3,"🍬"],["つみきが8こあります。4こかたづけると、のこりはなんこですか。",4,"🧱"],["どんぐりが9こあります。1こなくすと、のこりはなんこですか。",8,"🟤"]
+      ].map((x, i) => makeProblem(`g1-ma-sub-${i + 1}`, 1, "算数", "input", x[0], String(x[1]), [String(x[1]), `${x[1]}こ`, `${x[1]}ひき`, `${x[1]}まい`, `${x[1]}ほん`], `へる問題です。のこりは${x[1]}です。`, "とった分を、ぜんぶの数からへらします。", "countingObjects", { icon: x[2], count: x[1] })),
+      ...[
+        [0,8,4], [0,10,7], [0,12,9], [2,10,6], [0,15,12], [5,15,11], [0,20,16], [3,13,8]
+      ].map((x, i) => makeProblem(`g1-ma-line-${i + 1}`, 1, "算数", "choice", `すうじのせんで、●のところのかずはどれですか。`, String(x[2]), [String(x[2])], `●は${x[2]}のところにあります。`, "左からじゅんにかぞえましょう。", "numberLine", { min: x[0], max: x[1], tickStep: x[1] > 12 ? 2 : 1, points: [{ value: x[2], label: "●" }] }, { choices: [String(x[2]), String(x[2] - 1), String(x[2] + 1)] })),
+      ...[
+        [3,0,"3じ"],[7,0,"7じ"],[9,0,"9じ"],[2,30,"2じ30ぷん"],[6,30,"6じ30ぷん"],[10,30,"10じ30ぷん"]
+      ].map((x, i) => makeProblem(`g1-ma-clock-${i + 1}`, 1, "算数", "input", `とけいはなんじですか。`, x[2], [x[2], x[2].replace("じ","時").replace("ぷん","分")], `みじかいはりと、ながいはりを見ます。答えは${x[2]}です。`, "みじかいはりを先に見ましょう。", "clock", { hour: x[0], minute: x[1] })),
+      ...[
+        ["まる","circle"],["さんかく","triangle"],["しかく","rect"],["ながしかく","rectwide"],["おなじかたち","same"],["かどが4つ","corners"]
+      ].map((x, i) => makeProblem(`g1-ma-shape-${i + 1}`, 1, "算数", i % 2 ? "choice" : "input", `図を見て、${i < 4 ? "かたちのなまえ" : "あてはまることば"}を答えましょう。`, x[0], [x[0]], `図のかたちをよく見ると「${x[0]}」です。`, "かどやまるさを見ましょう。", "shape", shapeVisual1(x[1]), i % 2 ? { choices: [x[0], "まる", "さんかく"].filter((v, idx, arr) => arr.indexOf(v) === idx) } : {})),
+      ...[
+        ["5は3より大きいです。大きい数を書きましょう。","5"],["2と8では、どちらが小さいですか。","2"],["10のひとつ前の数を書きましょう。","9"],["6のひとつ後の数を書きましょう。","7"],["4、5、6のつぎの数を書きましょう。","7"],["9、8、7のつぎの数を書きましょう。","6"],["10を、5といくつに分けられますか。","5"],["8を、3といくつに分けられますか。","5"]
+      ].map((x, i) => makeProblem(`g1-ma-num-${i + 1}`, 1, "算数", "input", x[0], x[1], [x[1]], `数のならびや大きさを考えると、答えは${x[1]}です。`, "数のじゅんばんを思い出しましょう。", "numberLine", { min: 0, max: 10, points: [{ value: Number(x[1]), label: "答え" }] }))
+    ];
+    return ja.concat(math.slice(0, 50));
+  }
+
+  function grade4Bank() {
+    const ja = [
+      ...[
+        ["季節","きせつ","春・夏・秋・冬などの時期を表します。"],["努力","どりょく","目標に向かって力をつくすことです。"],["観察","かんさつ","よく見て調べることです。"],["希望","きぼう","こうなってほしいという願いです。"],["冷静","れいせい","落ち着いている様子です。"],["協力","きょうりょく","力を合わせることです。"],["約束","やくそく","守ると決めたことです。"],["連続","れんぞく","続いていることです。"],["必要","ひつよう","なくてはならないことです。"],["結果","けっか","ものごとの終わりに出たことです。"]
+      ].map((x, i) => makeProblem(`g4-ja-read-${i + 1}`, 4, "国語", "input", `「${x[0]}」の読み方をひらがなで書きましょう。`, x[1], [x[1]], `「${x[0]}」は「${x[1]}」と読みます。${x[2]}`, "漢字の形と意味を合わせて考えます。", "englishPictureCard", { icon: "📘", word: x[0], label: "読み方" })),
+      ...[
+        ["きせつ","季節"],["どりょく","努力"],["かんさつ","観察"],["きぼう","希望"],["れいせい","冷静"],["きょうりょく","協力"],["やくそく","約束"],["ひつよう","必要"]
+      ].map((x, i) => makeProblem(`g4-ja-kanji-${i + 1}`, 4, "国語", "input", `「${x[0]}」を漢字で書きましょう。`, x[1], [x[1]], `「${x[0]}」は漢字で「${x[1]}」と書きます。`, "送りがなはありません。", "table", { headers: ["読み", "漢字"], rows: [[x[0], "?"]] })),
+      ...[
+        ["雨がやんだので、外で遊べる。","理由"],["風は強いけれど、船は進んだ。","反対"],["朝になったら、鳥が鳴き始めた。","時間"],["本を読むために、図書館へ行った。","目的"],["暑いから、窓を開けた。","理由"],["練習したのに、うまくできなかった。","反対"],["夕方になると、町の明かりがついた。","時間"],["発表するために、資料を集めた。","目的"]
+      ].map((x, i) => makeProblem(`g4-ja-connect-${i + 1}`, 4, "国語", "choice", `「${x[0]}」のつなぐ言葉は、どの関係を表しますか。`, x[1], [x[1]], `文の前後の関係を見ると「${x[1]}」を表しています。`, "前の文と後ろの文のつながりを考えます。", "table", { headers: ["文", "関係"], rows: [[x[0], "?"]] }, { choices: [x[1], "理由", "反対", "目的", "時間"].filter((v, idx, arr) => arr.indexOf(v) === idx).slice(0, 4) })),
+      ...[
+        ["根気強い","あきらめずに続ける"],["工夫する","よい方法を考える"],["慎重","よく考えて注意する様子"],["豊か","十分にあり、満ちている様子"],["予想","これからどうなるか考えること"],["整理","分かりやすく整えること"],["比較","二つ以上を比べること"],["役割","その人や物が受け持つ働き"]
+      ].map((x, i) => makeProblem(`g4-ja-vocab-${i + 1}`, 4, "国語", i % 2 ? "input" : "choice", `「${x[0]}」の意味として合うものを答えましょう。`, x[1], [x[1]], `「${x[0]}」は「${x[1]}」という意味です。`, "言葉が使われる場面を思い出します。", "englishPictureCard", { icon: "💡", word: x[0], label: "語い" }, i % 2 ? {} : { choices: [x[1], "急いでやめること", "同じ文字を消すこと", "音を小さくすること"] })),
+      ...[
+        ["朝の公園では、子どもたちが落ち葉を集めていた。管理人さんは、集めた落ち葉を花だんの土にまぜると話した。","落ち葉を土にまぜること","落ち葉は土づくりに役立つからです。"],["川の水位が上がったため、先生は橋を渡らず別の道を選んだ。遠回りでも安全を優先した。","安全を優先したこと","水位が上がった橋は危ないからです。"],["図書委員は、新しい本を紹介するカードを入口に置いた。借りる人が増え、昼休みの図書室は明るくなった。","本の紹介カード","本に興味をもつ人が増えたからです。"],["校庭のすみに小さな芽が出た。クラスは札を立て、水やりの当番を決めて見守った。","芽を見守ったこと","育つ様子を続けて観察するためです。"],["町の祭りでは、古い道具を展示した。お年寄りは道具の使い方を子どもたちに説明した。","古い道具の展示","昔のくらしを伝えるためです。"],["運動会の前、係の人は白線を引き直した。走る場所が分かりやすくなり、練習が進めやすくなった。","白線を引き直したこと","走る場所を分かりやすくするためです。"],["雨の日の登校では、班長が歩く速さをゆっくりにした。みんながすべらないように気を配った。","ゆっくり歩いたこと","安全に歩くためです。"],["給食の残りを減らすため、係は人気の献立を表にまとめた。次の献立を考える資料になった。","人気の献立の表","残りを減らす工夫に使うためです。"]
+      ].map((x, i) => makeProblem(`g4-ja-readtext-${i + 1}`, 4, "国語", i % 2 ? "input" : "choice", `次の文章で、大切な行動は何ですか。「${x[0]}」`, x[1], [x[1]], x[2], "だれが何をしたかに注目します。", "table", { headers: ["文章", "大切なこと"], rows: [["本文", "?"]] }, i % 2 ? { longAnswer: true } : { choices: [x[1], "関係のない遊び", "文字の大きさだけ", "天気の名前だけ"] })),
+      ...[
+        ["文章の中心を短くまとめること","要約"],["理由を示して自分の考えを書く文","意見文"],["実際にあったこととして書かれている内容","事実"],["筆者が伝えたい中心の考え","主張"],["人物の言葉をそのまま書いた部分","会話文"],["文の中で何をしたかを表す言葉","述語"],["文の中でだれがしたかを表す言葉","主語"],["二つのものをくらべること","比較"]
+      ].map((x, i) => makeProblem(`g4-ja-term-${i + 1}`, 4, "国語", "input", `${x[0]}を表す言葉を書きましょう。`, x[1], [x[1]], `${x[0]}は「${x[1]}」です。`, "国語の学習で使う言葉を思い出します。", "none", {}))
+    ];
+
+    const math = [
+      ...[
+        ["96÷4",24],["156÷3",52],["208÷8",26],["315÷5",63],["432÷6",72],["728÷7",104],["864÷9",96],["504÷8",63]
+      ].map((x, i) => makeProblem(`g4-ma-div-${i + 1}`, 4, "算数", "input", `${x[0]} の答えを書きましょう。`, String(x[1]), [String(x[1])], `${x[0]}=${x[1]}です。わられる数を順に分けて計算します。`, "位ごとにわって、たしかめにかけ算をします。", "table", { headers: ["式", "答え"], rows: [[x[0], "?"]] })),
+      ...[
+        ["0.7+0.5",1.2],["1.6+2.8",4.4],["5.3-1.7",3.6],["8.0-2.45",5.55],["0.24+0.36",0.6],["3.5×4",14],["2.4×3",7.2],["6.3÷3",2.1]
+      ].map((x, i) => makeProblem(`g4-ma-dec-${i + 1}`, 4, "算数", "input", `${x[0]} の答えを小数で書きましょう。`, String(x[1]), [String(x[1])], `小数点の位置に気をつけると、答えは${x[1]}です。`, "小数点をそろえて考えます。", "numberLine", { min: 0, max: 20, tickStep: 5, display: "tenths", points: [{ value: Math.min(20, Math.round(Number(x[1]) * 10)), label: String(x[1]) }] })),
+      ...[
+        ["1/4+2/4","3/4"],["3/5+1/5","4/5"],["5/6-2/6","3/6"],["1/3と同じ大きさの分数","2/6"],["2/8を約分した分数","1/4"],["3/10+4/10","7/10"],["7/9-5/9","2/9"],["4/12を約分した分数","1/3"]
+      ].map((x, i) => makeProblem(`g4-ma-frac-${i + 1}`, 4, "算数", i % 3 === 0 ? "choice" : "input", `${x[0]} の答えを書きましょう。`, x[1], [x[1]], `分母が同じ分数は、分子を計算します。答えは${x[1]}です。`, "分母をよく見ましょう。", "table", { headers: ["問題", "答え"], rows: [[x[0], "?"]] }, i % 3 === 0 ? { choices: [x[1], "1/2", "5/4", "1/8"] } : {})),
+      ...[
+        ["たて8cm、横6cmの長方形の面積", "48平方cm", 8, 6],["一辺7cmの正方形の面積", "49平方cm", 7, 7],["たて12m、横5mの花だんの面積", "60平方m", 12, 5],["たて9cm、横4cmのカードの面積", "36平方cm", 9, 4],["一辺10mの正方形の広場の面積", "100平方m", 10, 10],["たて15cm、横3cmの長方形の面積", "45平方cm", 15, 3],["たて6m、横11mの畑の面積", "66平方m", 6, 11],["一辺8cmの正方形の面積", "64平方cm", 8, 8]
+      ].map((x, i) => makeProblem(`g4-ma-area-${i + 1}`, 4, "算数", "input", `${x[0]}を求めましょう。`, x[1], [x[1], x[1].replace("平方","")], `長方形や正方形の面積は、たて×横で求めます。答えは${x[1]}です。`, "たてと横をかけます。", "shape", { label: "面積", shapes: [{ kind: "rect", x: 105, y: 75, w: 210, h: 120, color: "#eaf4ff" }, { label: `${x[2]}`, x: 205, y: 62 }, { label: `${x[3]}`, x: 330, y: 140 }] })),
+      ...[
+        ["直角は何度ですか。","90度"],["半回転の角は何度ですか。","180度"],["三角形の内角の和は何度ですか。","180度"],["四角形の内角の和は何度ですか。","360度"],["30度と60度を合わせると何度ですか。","90度"],["120度から30度をひくと何度ですか。","90度"]
+      ].map((x, i) => makeProblem(`g4-ma-angle-${i + 1}`, 4, "算数", i % 2 ? "input" : "choice", x[0], x[1], [x[1], x[1].replace("度","")], `角の大きさを考えると、答えは${x[1]}です。`, "直角は90度です。", "shape", angleVisual(), i % 2 ? {} : { choices: [x[1], "45度", "120度", "360度"].filter((v, idx, arr) => arr.indexOf(v) === idx) })),
+      ...[
+        [["月","火","水","木"],[8,12,9,15],"いちばん多い曜日","木"],[[ "A","B","C","D"],[24,18,30,12],"30を表す棒","C"],[["1組","2組","3組"],[16,21,19],"いちばん少ない組","1組"],[["春","夏","秋","冬"],[7,13,10,5],"夏と冬の差","8"],[["本","ノート","鉛筆"],[40,25,35],"全部で何こ","100"],[["東","西","南","北"],[11,17,14,10],"西は北よりいくつ多い","7"]
+      ].map((x, i) => makeProblem(`g4-ma-graph-${i + 1}`, 4, "算数", "input", `棒グラフを見て、「${x[2]}」に答えましょう。`, x[3], [x[3]], `棒の高さや数を比べると、答えは${x[3]}です。`, "棒の上の数を見ます。", "barGraph", { labels: x[0], values: x[1] })),
+      ...[
+        ["1こ80円のノートを6こ買います。代金はいくらですか。","480円"],["24このクッキーを4人で同じ数ずつ分けます。1人分は何こですか。","6こ"],["3.5Lの水を4本分集めます。全部で何Lですか。","14L"],["96ページの本を1日12ページずつ読みます。何日で読み終わりますか。","8日"],["リボンを2.4mずつ3本切ります。全部で何m使いますか。","7.2m"],["48この花を6こずつ束にします。何束できますか。","8束"]
+      ].map((x, i) => makeProblem(`g4-ma-word-${i + 1}`, 4, "算数", "input", x[0], x[1], [x[1], x[1].replace(/[円こlLm日束]/g, "")], `問題の場面に合う式を考えると、答えは${x[1]}です。`, "何を求める問題かを先に決めます。", "table", { headers: ["分かること", "求めること"], rows: [[x[0].slice(0, 12), "?"]] })),
+      ...[
+        ["1個80円の品物をx個買う代金の式","80×x"],["全部でa個のあめを4人で分ける式","a÷4"],["たて6cm、横xcmの長方形の面積の式","6×x"],["1本2.5Lの水をx本集める式","2.5×x"]
+      ].map((x, i) => makeProblem(`g4-ma-formula-${i + 1}`, 4, "算数", "input", `${x[0]}を書きましょう。`, x[1], [x[1], x[1].replace("×","*").replace("÷","/")], `数量の関係を式にすると、${x[1]}です。`, "同じ量がいくつ分あるかを考えます。", "table", { headers: ["場面", "式"], rows: [[x[0], "?"]] }))
+    ];
+    return ja.concat(math.slice(0, 46).concat(math.slice(-4)));
+  }
+
+  function kanaShift(kana, offset) {
+    const list = ["あ","い","う","え","お","か","き","く","け","こ","さ","し","す","せ","そ","た","ち","つ","て","と","な","に","ぬ","ね","の","は","ひ","ふ","へ","ほ","ま","み","む","め","も","や","ゆ","よ","ら","り","る","れ","ろ","わ"];
+    const index = list.indexOf(kana);
+    return list[(Math.max(index, 0) + offset) % list.length];
+  }
+
+  function shapeVisual1(kind) {
+    if (kind === "circle") return { shapes: [{ kind: "circle", cx: 210, cy: 120, r: 58, color: "#ffd166" }], label: "かたち" };
+    if (kind === "triangle") return { shapes: [{ kind: "triangle", points: "210,50 110,185 310,185", color: "#36c6a5" }], label: "かたち" };
+    if (kind === "rectwide") return { shapes: [{ kind: "rect", x: 95, y: 85, w: 230, h: 80, color: "#ff7aa8" }], label: "かたち" };
+    if (kind === "same") return { shapes: [{ kind: "circle", cx: 145, cy: 120, r: 45 }, { kind: "circle", cx: 275, cy: 120, r: 45 }], label: "おなじかたち" };
+    return { shapes: [{ kind: "rect", x: 145, y: 65, w: 130, h: 130, color: "#eaf4ff" }], label: "かたち" };
+  }
+
+  function angleVisual() {
+    return { shapes: [{ label: "∠", x: 120, y: 150 }, { kind: "triangle", points: "210,60 120,190 320,190", color: "#eaf4ff" }], label: "角" };
   }
 
   function seededShuffle(items, seed) {
@@ -398,7 +540,7 @@
         if (shape.kind === "triangle") return `<polygon points="${shape.points}" fill="${color}" stroke="#18324a" stroke-width="3"/>`;
         if (shape.kind === "circle") return `<circle cx="${shape.cx}" cy="${shape.cy}" r="${shape.r}" fill="${color}" stroke="#18324a" stroke-width="3"/>`;
         if (shape.kind === "rect") return `<rect x="${shape.x}" y="${shape.y}" width="${shape.w}" height="${shape.h}" rx="6" fill="${color}" stroke="#18324a" stroke-width="3"/>`;
-        return `<text x="${shape.x || 30}" y="${shape.y || 45 + i * 36}" font-size="22" font-weight="800">${escapeHtml(shape.label || "")}</text>`;
+        return `<text x="${shape.x || 30}" y="${shape.y || 45 + i * 36}" font-size="38" font-weight="900">${escapeHtml(shape.label || "")}</text>`;
       }).join("")}
       ${data.label ? `<text x="210" y="238" text-anchor="middle" font-size="20" font-weight="800">${escapeHtml(data.label)}</text>` : ""}
     </svg>`;
@@ -440,21 +582,11 @@
   }
 
   function renderScience(data) {
-    if (data.kind === "water") {
-      return `<svg viewBox="0 0 340 260" role="img" aria-label="水の変化"><rect x="70" y="70" width="80" height="92" rx="8" fill="#d9f0ff" stroke="#18324a" stroke-width="3"/><path d="M190 160 C210 110 240 95 260 55" fill="none" stroke="#8cc7ff" stroke-width="10" stroke-linecap="round"/><text x="110" y="202" text-anchor="middle" font-size="18" font-weight="800">水</text><text x="250" y="202" text-anchor="middle" font-size="18" font-weight="800">水蒸気</text></svg>`;
-    }
-    return `<svg viewBox="0 0 320 300" role="img" aria-label="観察図">
-      <line x1="160" y1="112" x2="160" y2="232" stroke="#36a96b" stroke-width="12"/>
-      <ellipse cx="115" cy="160" rx="52" ry="24" fill="#64c97b" transform="rotate(-28 115 160)"/>
-      <ellipse cx="205" cy="145" rx="52" ry="24" fill="#64c97b" transform="rotate(28 205 145)"/>
-      <circle cx="160" cy="88" r="36" fill="#ffd166" stroke="#18324a" stroke-width="3"/>
-      <path d="M108 235 C130 260, 152 252, 160 232 C170 255, 198 262, 220 235" fill="none" stroke="#8b6b43" stroke-width="8" stroke-linecap="round"/>
-      <text x="160" y="285" text-anchor="middle" font-size="18" font-weight="800">${escapeHtml(data.label || "観察")}</text>
-    </svg>`;
+    return `<svg viewBox="0 0 320 300" role="img" aria-label="観察図"><text x="160" y="150" text-anchor="middle" font-size="22">${escapeHtml(data.label || "図")}</text></svg>`;
   }
 
   function renderEnglishCard(data) {
-    return `<svg viewBox="0 0 360 260" role="img" aria-label="英語カード">
+    return `<svg viewBox="0 0 360 260" role="img" aria-label="絵カード">
       <rect x="30" y="20" width="300" height="220" rx="8" fill="#fff" stroke="#2f80ed" stroke-width="5"/>
       <text x="180" y="92" text-anchor="middle" font-size="58">${escapeHtml(data.icon || "★")}</text>
       <text x="180" y="168" text-anchor="middle" font-size="33" font-weight="900" fill="#18324a">${escapeHtml(data.word || "")}</text>
@@ -463,7 +595,7 @@
   }
 
   function heroSvg() {
-    return `<svg viewBox="0 0 520 360" role="img" aria-label="学習イラスト"><rect x="46" y="52" width="428" height="250" rx="16" fill="#fff" stroke="#2f80ed" stroke-width="6"/><rect x="78" y="86" width="160" height="38" rx="8" fill="#eaf4ff"/><rect x="78" y="144" width="92" height="92" rx="8" fill="#ffd166"/><circle cx="300" cy="188" r="48" fill="#36c6a5"/><path d="M360 226 L420 104 L470 226 Z" fill="#ff7aa8"/><line x1="90" y1="270" x2="430" y2="270" stroke="#18324a" stroke-width="5" stroke-linecap="round"/><text x="156" y="210" text-anchor="middle" font-size="60" font-weight="900" fill="#18324a">1</text><text x="300" y="205" text-anchor="middle" font-size="52" font-weight="900" fill="#fff">4</text></svg>`;
+    return `<svg viewBox="0 0 520 360" role="img" aria-label="学習イラスト"><rect x="46" y="52" width="428" height="250" rx="16" fill="#fff" stroke="#2f80ed" stroke-width="6"/><rect x="78" y="86" width="160" height="38" rx="8" fill="#eaf4ff"/><rect x="78" y="144" width="92" height="92" rx="8" fill="#ffd166"/><circle cx="300" cy="188" r="48" fill="#36c6a5"/><path d="M360 226 L420 104 L470 226 Z" fill="#ff7aa8"/><line x1="90" y1="270" x2="430" y2="270" stroke="#18324a" stroke-width="5" stroke-linecap="round"/><text x="156" y="210" text-anchor="middle" font-size="60" font-weight="900" fill="#18324a">国</text><text x="300" y="205" text-anchor="middle" font-size="52" font-weight="900" fill="#fff">算</text></svg>`;
   }
 
   function escapeHtml(value) {
