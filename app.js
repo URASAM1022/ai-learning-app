@@ -6,6 +6,7 @@
   const POINTS = 5;
   const QUESTIONS_PER_TEST = 20;
   const HISTORY_KEY = "dailyAiStudy.kokugoMath.history.v3";
+  const RECENT_KEY = "dailyAiStudy.kokugoMath.recent.v3";
   const app = document.querySelector("#app");
   const state = { grade: null, subjectMode: null, problems: [], reviewMode: false };
 
@@ -86,13 +87,45 @@
 
   function pickProblems(bank, grade, subjectMode) {
     const today = new Date();
-    const dateKey = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}:${grade}:${subjectMode}`;
+    const recentKey = `${grade}:${subjectMode}`;
+    const recent = getRecentIds(recentKey);
+    const nonce = `${Date.now()}:${Math.random()}`;
+    const dateKey = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}:${grade}:${subjectMode}:${nonce}`;
+    let picked;
     if (subjectMode === "ミックス") {
-      const japanese = seededShuffle(bank.filter((p) => p.subject === "国語"), hashString(`${dateKey}:ja`)).slice(0, 10);
-      const math = seededShuffle(bank.filter((p) => p.subject === "算数"), hashString(`${dateKey}:math`)).slice(0, 10);
-      return seededShuffle(japanese.concat(math), hashString(`${dateKey}:mix`));
+      const japanese = pickWithRecentAvoidance(bank.filter((p) => p.subject === "国語"), 10, recent, hashString(`${dateKey}:ja`));
+      const math = pickWithRecentAvoidance(bank.filter((p) => p.subject === "算数"), 10, recent, hashString(`${dateKey}:math`));
+      picked = seededShuffle(japanese.concat(math), hashString(`${dateKey}:mix`));
+    } else {
+      picked = pickWithRecentAvoidance(bank.filter((p) => p.subject === subjectMode), QUESTIONS_PER_TEST, recent, hashString(dateKey));
     }
-    return seededShuffle(bank.filter((p) => p.subject === subjectMode), hashString(dateKey)).slice(0, QUESTIONS_PER_TEST);
+    rememberRecentIds(recentKey, picked.map((p) => p.id));
+    return picked;
+  }
+
+  function pickWithRecentAvoidance(items, count, recentIds, seed) {
+    const fresh = items.filter((item) => !recentIds.includes(item.id));
+    const pool = fresh.length >= count ? fresh : items;
+    return seededShuffle(pool, seed).slice(0, count);
+  }
+
+  function getRecentIds(key) {
+    try {
+      const all = JSON.parse(localStorage.getItem(RECENT_KEY) || "{}");
+      return Array.isArray(all[key]) ? all[key] : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function rememberRecentIds(key, ids) {
+    try {
+      const all = JSON.parse(localStorage.getItem(RECENT_KEY) || "{}");
+      all[key] = ids.concat(all[key] || []).slice(0, 60);
+      localStorage.setItem(RECENT_KEY, JSON.stringify(all));
+    } catch {
+      // localStorage may be unavailable in private contexts. Random selection still works.
+    }
   }
 
   function showQuiz() {
@@ -344,7 +377,7 @@
     const ja = [
       ...[
         ["はな","🌸","さいしょのおとは「は」です。"],["ねこ","🐱","にゃあとないています。"],["うみ","🌊","なみがよせるところです。"],["やま","⛰️","たかくもり上がったところです。"],["つき","🌙","よるのそらに見えます。"],["いぬ","🐶","わんとなくどうぶつです。"],["あめ","☔","そらから水がおちます。"],["くも","☁️","そらにうかびます。"],["ほし","⭐","よるにきらきら見えます。"],["もも","🍑","あまいくだものです。"]
-      ].map((x, i) => makeProblem(`g1-ja-word-${i + 1}`, 1, "国語", "input", `えをみて、ことばをひらがなでかきましょう。`, x[0], [x[0]], `えは「${x[0]}」です。ひらがなでていねいにかきます。`, x[2], "englishPictureCard", { icon: x[1], word: "?", label: "なまえをかく" })),
+      ].map((x, i) => makeProblem(`g1-ja-word-${i + 1}`, 1, "国語", "input", `${x[2]} えのなまえを、ひらがなでかきましょう。`, x[0], [x[0]], `えは「${x[0]}」です。ひらがなでていねいにかきます。`, x[2], "englishPictureCard", { icon: x[1], word: "?", label: "なまえをかく" })),
       ...[
         ["さくら","さ"],["とけい","と"],["からす","か"],["みかん","み"],["すいか","す"],["ひこうき","ひ"],["えんぴつ","え"],["おにぎり","お"],["かえる","か"],["たいこ","た"]
       ].map((x, i) => makeProblem(`g1-ja-first-${i + 1}`, 1, "国語", "choice", `「${x[0]}」のさいしょのおとはどれですか。`, x[1], [x[1]], `「${x[0]}」は、さいしょに「${x[1]}」とよみます。`, `ゆっくり「${x[0]}」とよみましょう。`, "englishPictureCard", { icon: ["🌸","⏰","🐦","🍊","🍉","✈️","✏️","🍙","🐸","🥁"][i], word: x[0], label: "さいしょのおと" }, { choices: [x[1], kanaShift(x[1], 1), kanaShift(x[1], 2)] })),
@@ -371,13 +404,13 @@
       ].map((x, i) => makeProblem(`g1-ma-sub-${i + 1}`, 1, "算数", "input", x[0], String(x[1]), [String(x[1]), `${x[1]}こ`, `${x[1]}ひき`, `${x[1]}まい`, `${x[1]}ほん`], `へる問題です。のこりは${x[1]}です。`, "とった分を、ぜんぶの数からへらします。", "countingObjects", { icon: x[2], count: x[1] })),
       ...[
         [0,8,4], [0,10,7], [0,12,9], [2,10,6], [0,15,12], [5,15,11], [0,20,16], [3,13,8]
-      ].map((x, i) => makeProblem(`g1-ma-line-${i + 1}`, 1, "算数", "choice", `すうじのせんで、●のところのかずはどれですか。`, String(x[2]), [String(x[2])], `●は${x[2]}のところにあります。`, "左からじゅんにかぞえましょう。", "numberLine", { min: x[0], max: x[1], tickStep: x[1] > 12 ? 2 : 1, points: [{ value: x[2], label: "●" }] }, { choices: [String(x[2]), String(x[2] - 1), String(x[2] + 1)] })),
+      ].map((x, i) => makeProblem(`g1-ma-line-${i + 1}`, 1, "算数", "choice", `${["スタートから進んだ場所","シールをはった場所","うさぎが止まった場所","カードを置いた場所","ゴールに近い場所","えんぴつの先の場所","バス停の場所","旗を立てた場所"][i]}です。すうじのせんで、●のところのかずはどれですか。`, String(x[2]), [String(x[2])], `●は${x[2]}のところにあります。`, "左からじゅんにかぞえましょう。", "numberLine", { min: x[0], max: x[1], tickStep: x[1] > 12 ? 2 : 1, points: [{ value: x[2], label: "●" }] }, { choices: [String(x[2]), String(x[2] - 1), String(x[2] + 1)] })),
       ...[
         [3,0,"3じ"],[7,0,"7じ"],[9,0,"9じ"],[2,30,"2じ30ぷん"],[6,30,"6じ30ぷん"],[10,30,"10じ30ぷん"]
-      ].map((x, i) => makeProblem(`g1-ma-clock-${i + 1}`, 1, "算数", "input", `とけいはなんじですか。`, x[2], [x[2], x[2].replace("じ","時").replace("ぷん","分")], `みじかいはりと、ながいはりを見ます。答えは${x[2]}です。`, "みじかいはりを先に見ましょう。", "clock", { hour: x[0], minute: x[1] })),
+      ].map((x, i) => makeProblem(`g1-ma-clock-${i + 1}`, 1, "算数", "input", `${["おやつ","あさのしたく","よるの読書","こうえんへ行く","ばんごはん","学校へ行く"][i]}の時こくです。とけいはなんじですか。`, x[2], [x[2], x[2].replace("じ","時").replace("ぷん","分")], `みじかいはりと、ながいはりを見ます。答えは${x[2]}です。`, "みじかいはりを先に見ましょう。", "clock", { hour: x[0], minute: x[1] })),
       ...[
         ["まる","circle"],["さんかく","triangle"],["しかく","rect"],["ながしかく","rectwide"],["おなじかたち","same"],["かどが4つ","corners"]
-      ].map((x, i) => makeProblem(`g1-ma-shape-${i + 1}`, 1, "算数", i % 2 ? "choice" : "input", `図を見て、${i < 4 ? "かたちのなまえ" : "あてはまることば"}を答えましょう。`, x[0], [x[0]], `図のかたちをよく見ると「${x[0]}」です。`, "かどやまるさを見ましょう。", "shape", shapeVisual1(x[1]), i % 2 ? { choices: [x[0], "まる", "さんかく"].filter((v, idx, arr) => arr.indexOf(v) === idx) } : {})),
+      ].map((x, i) => makeProblem(`g1-ma-shape-${i + 1}`, 1, "算数", i % 2 ? "choice" : "input", `${["まるい形","三つのかどがある形","四つのかどが同じように見える形","よこに長い形","二つをくらべる形","かどを数える形"][i]}です。図を見て答えましょう。`, x[0], [x[0]], `図のかたちをよく見ると「${x[0]}」です。`, "かどやまるさを見ましょう。", "shape", shapeVisual1(x[1]), i % 2 ? { choices: [x[0], "まる", "さんかく"].filter((v, idx, arr) => arr.indexOf(v) === idx) } : {})),
       ...[
         ["5は3より大きいです。大きい数を書きましょう。","5"],["2と8では、どちらが小さいですか。","2"],["10のひとつ前の数を書きましょう。","9"],["6のひとつ後の数を書きましょう。","7"],["4、5、6のつぎの数を書きましょう。","7"],["9、8、7のつぎの数を書きましょう。","6"],["10を、5といくつに分けられますか。","5"],["8を、3といくつに分けられますか。","5"]
       ].map((x, i) => makeProblem(`g1-ma-num-${i + 1}`, 1, "算数", "input", x[0], x[1], [x[1]], `数のならびや大きさを考えると、答えは${x[1]}です。`, "数のじゅんばんを思い出しましょう。", "numberLine", { min: 0, max: 10, points: [{ value: Number(x[1]), label: "答え" }] }))
@@ -403,8 +436,15 @@
         ["朝の公園では、子どもたちが落ち葉を集めていた。管理人さんは、集めた落ち葉を花だんの土にまぜると話した。","落ち葉を土にまぜること","落ち葉は土づくりに役立つからです。"],["川の水位が上がったため、先生は橋を渡らず別の道を選んだ。遠回りでも安全を優先した。","安全を優先したこと","水位が上がった橋は危ないからです。"],["図書委員は、新しい本を紹介するカードを入口に置いた。借りる人が増え、昼休みの図書室は明るくなった。","本の紹介カード","本に興味をもつ人が増えたからです。"],["校庭のすみに小さな芽が出た。クラスは札を立て、水やりの当番を決めて見守った。","芽を見守ったこと","育つ様子を続けて観察するためです。"],["町の祭りでは、古い道具を展示した。お年寄りは道具の使い方を子どもたちに説明した。","古い道具の展示","昔のくらしを伝えるためです。"],["運動会の前、係の人は白線を引き直した。走る場所が分かりやすくなり、練習が進めやすくなった。","白線を引き直したこと","走る場所を分かりやすくするためです。"],["雨の日の登校では、班長が歩く速さをゆっくりにした。みんながすべらないように気を配った。","ゆっくり歩いたこと","安全に歩くためです。"],["給食の残りを減らすため、係は人気の献立を表にまとめた。次の献立を考える資料になった。","人気の献立の表","残りを減らす工夫に使うためです。"]
       ].map((x, i) => makeProblem(`g4-ja-readtext-${i + 1}`, 4, "国語", i % 2 ? "input" : "choice", `次の文章で、大切な行動は何ですか。「${x[0]}」`, x[1], [x[1]], x[2], "だれが何をしたかに注目します。", "table", { headers: ["文章", "大切なこと"], rows: [["本文", "?"]] }, i % 2 ? { longAnswer: true } : { choices: [x[1], "関係のない遊び", "文字の大きさだけ", "天気の名前だけ"] })),
       ...[
-        ["文章の中心を短くまとめること","要約"],["理由を示して自分の考えを書く文","意見文"],["実際にあったこととして書かれている内容","事実"],["筆者が伝えたい中心の考え","主張"],["人物の言葉をそのまま書いた部分","会話文"],["文の中で何をしたかを表す言葉","述語"],["文の中でだれがしたかを表す言葉","主語"],["二つのものをくらべること","比較"]
-      ].map((x, i) => makeProblem(`g4-ja-term-${i + 1}`, 4, "国語", "input", `${x[0]}を表す言葉を書きましょう。`, x[1], [x[1]], `${x[0]}は「${x[1]}」です。`, "国語の学習で使う言葉を思い出します。", "none", {}))
+        ["朝、教室に入ると、花びんの水が少なくなっていた。美咲さんは係の仕事ではなかったが、そっと水を足した。", "美咲さんは気がついて行動できる人", "花びんの水が少ないことに気づき、自分から水を足したからです。"],
+        ["弟は初めての発表で声が小さかった。兄は『最初の一文だけ、ゆっくり言ってみよう』と声をかけた。", "弟を安心させようとした", "兄は弟ができそうな小さな目標を伝えているからです。"],
+        ["公園のベンチに忘れ物の手ぶくろがあった。悠人さんは遊ぶ前に、近くの交番へ届けた。", "忘れ物を届けたこと", "持ち主が困らないように行動しているからです。"],
+        ["係会で意見が分かれた。すぐに決めず、二つの案のよいところを黒板に書き出した。", "案を比べて考えたこと", "それぞれのよさを見てから決めようとしているからです。"],
+        ["遠足のしおりを読んだ花さんは、集合時刻に線を引いた。家に帰ってから家族にも伝えた。", "集合時刻を確かめたこと", "大切な情報を見落とさないようにしているからです。"],
+        ["作文で『楽しかった』だけでは様子が伝わりにくい。そこで、音や会話を入れて書き直した。", "様子が伝わるように書き直した", "読み手が場面を思いうかべやすくなるからです。"],
+        ["雨で校庭が使えない日、係は体育館でできる遊びを三つ提案した。みんなで選べるようにした。", "代わりの遊びを提案したこと", "できないことの代わりに、できる方法を考えているからです。"],
+        ["新聞づくりで、写真の下に短い説明をつけた。読む人は何の写真かすぐ分かった。", "写真に説明をつけたこと", "読む人が内容を理解しやすくなるからです。"]
+      ].map((x, i) => makeProblem(`g4-ja-think-${i + 1}`, 4, "国語", i % 2 ? "input" : "choice", `次の文を読んで答えましょう。「${x[0]}」この人の行動として大切なことを答えましょう。`, x[1], [x[1]], x[2], "行動と、その理由をつなげて考えます。", "table", { headers: ["場面", "考えること"], rows: [["本文", "行動と理由"]] }, i % 2 ? { longAnswer: true } : { choices: [x[1], "早く終わらせたこと", "関係のないことを話したこと", "何もしなかったこと"] }))
     ];
 
     const math = [
