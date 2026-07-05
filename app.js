@@ -481,7 +481,7 @@
         ["table-6",["10のまとまり 2こ","ばら 0こ"],"数を かきましょう。","20",["20"],"10が二つで20です。"]
       ].map((x) => m(x[0], "input", x[2], x[3], x[4], x[5], "表の数を使って考えます。", "readingCard", { title: "表の問題", lines: x[1] }))
     ];
-    return ja.concat(math);
+    return ja.concat(math).map(withBetterHint);
   }
 
   function grade4Bank() {
@@ -596,7 +596,87 @@
         ["mix-4",["1本120円のペンをx本買う","500円出す"],"おつりを表す式を書きましょう。","500-120×x",["500-120×x","500-120*x"],"代金120×xを500円から引きます。"]
       ].map((x) => m(x[0], "input", x[2], x[3], x[4], x[5], "図や表から必要な数を選びます。", "readingCard", { title: "応用カード", lines: x[1] }))
     ];
-    return ja.concat(math);
+    return ja.concat(math).map(withBetterHint);
+  }
+
+  function withBetterHint(problem) {
+    return Object.assign({}, problem, { hint: betterHintFor(problem) });
+  }
+
+  function betterHintFor(problem) {
+    const id = problem.id;
+    const isGrade1 = problem.grade === 1;
+    const isJapanese = problem.subject === "国語";
+    let hint = "";
+
+    if (isGrade1) return betterGrade1HintFor(problem);
+
+    if (isJapanese) {
+      if (id.includes("-pic-")) hint = "えと せつめいを 見くらべて、なまえを 考えましょう。";
+      else if (id.includes("-story-")) hint = "文章の中の「だれが」「なにをした」を さがしましょう。";
+      else if (id.includes("-notice-")) hint = "おしらせの中の、時こく・もちもの・ばしょに 注目しましょう。";
+      else if (id.includes("-sentence-")) hint = "文の前と後ろを読んで、自然につながることばを考えましょう。";
+      else if (id.includes("-dialog-") || id.includes("-comic-")) hint = "登場人物の言ったことを、もう一度読みましょう。";
+      else if (id.includes("-order-")) hint = "番号のじゅんばんを見て、先にすること・後にすることを考えましょう。";
+      else if (id.includes("-letter-")) hint = "手紙の中で、相手に伝えていることをさがしましょう。";
+      else if (id.includes("-diary-")) hint = "日記の中で、できごとや気もちが書かれた文を見ましょう。";
+      else if (id.includes("-read-")) hint = "前の文と次の文を読み比べ、行動と結果をつなげましょう。";
+      else if (id.includes("-kanji-")) hint = "（　）の前後の文を読んで、場面に合う漢字を考えましょう。";
+      else if (id.includes("-data-")) hint = "資料の見出し・数・場所・目的が書かれた部分を見つけましょう。";
+      else if (id.includes("-comp-")) hint = "（　）の前後を読み、理由・目的・反対のつながりを考えましょう。";
+      else if (id.includes("-sum-")) hint = "文章全体で、はじめと終わりに何が変わったかを見ましょう。";
+      else if (id.includes("-paper-")) hint = "見出しや本文の中から、条件や目的が書かれたところを探しましょう。";
+      else hint = "本文や資料の中から、答えの手がかりになる文を探しましょう。";
+    } else {
+      if (id.includes("-count-")) hint = "まず全部でいくつあるか、ひとつずつ数えましょう。";
+      else if (id.includes("-add-")) hint = "ふえる場面です。はじめの数に、ふえた数を合わせましょう。";
+      else if (id.includes("-sub-")) hint = "へる場面です。全部の数から、なくなった分を引きましょう。";
+      else if (id.includes("-line-")) hint = "数直線を左から見て、印のある目もりを読みましょう。";
+      else if (id.includes("-clock-")) hint = "時計の長い針を見てから、短い針の位置を見ましょう。";
+      else if (id.includes("-shape-")) hint = "図の同じ形や、辺・かどの数に注目しましょう。";
+      else if (id.includes("-money-")) hint = "お金の種類ごとに金額をたして考えましょう。";
+      else if (id.includes("-len-")) hint = "二つの数を比べて、大きい方を選びましょう。";
+      else if (id.includes("-num-")) hint = "10のまとまりや、数の分け方を図で考えましょう。";
+      else if (id.includes("-table-")) hint = "表の中から必要な二つの数を選んで計算しましょう。";
+      else if (id.includes("-div-")) hint = "同じ数ずつ分ける場面なので、わり算の式を使いましょう。";
+      else if (id.includes("-dec-")) hint = "小数点の位置をそろえて、たし算・ひき算をしましょう。";
+      else if (id.includes("-frac-")) hint = "同じ大きさに分けた図を思いうかべ、分母を見ましょう。";
+      else if (id.includes("-area-")) hint = "長方形や正方形は、たてと横の長さを使って考えましょう。";
+      else if (id.includes("-angle-")) hint = "直角をもとにして、たす角・ひく角を考えましょう。";
+      else if (id.includes("-graph-")) hint = "棒の高さと、棒の上の数を見比べましょう。";
+      else if (id.includes("-word-")) hint = "場面の中で、一つ分・いくつ分・全部のどれを求めるか考えましょう。";
+      else if (id.includes("-formula-")) hint = "分かっている数と文字が、それぞれ何を表すか見ましょう。";
+      else if (id.includes("-mix-")) hint = "図や表から必要な数だけを選び、どんな計算か決めましょう。";
+      else hint = "図や表の数を見て、どんな計算を使うか考えましょう。";
+    }
+
+    return hint;
+  }
+
+  function betterGrade1HintFor(problem) {
+    const id = problem.id;
+    if (problem.subject === "国語") {
+      if (id.includes("-pic-")) return "えとせつめいをみくらべて、なまえをかんがえましょう。";
+      if (id.includes("-story-")) return "ぶんのなかの「だれが」「なにをした」をさがしましょう。";
+      if (id.includes("-notice-")) return "おしらせの、じこく・もちもの・ばしょをみましょう。";
+      if (id.includes("-sentence-")) return "まえのぶんとうしろのぶんを、こえにだしてよみましょう。";
+      if (id.includes("-dialog-") || id.includes("-comic-")) return "ふきだしのことばを、もういちどよみましょう。";
+      if (id.includes("-order-")) return "ばんごうのじゅんばんをみましょう。";
+      if (id.includes("-letter-")) return "てがみでつたえていることをさがしましょう。";
+      if (id.includes("-diary-")) return "にっきのできごとや、きもちをさがしましょう。";
+      return "カードのなかのことばを、ゆっくりよみましょう。";
+    }
+    if (id.includes("-count-")) return "ひとつずつ、ゆびでさしてかぞえましょう。";
+    if (id.includes("-add-")) return "はじめのかずに、ふえたかずをあわせましょう。";
+    if (id.includes("-sub-")) return "ぜんぶのかずから、へったぶんをひきましょう。";
+    if (id.includes("-line-")) return "すうじのせんを、ひだりからみましょう。";
+    if (id.includes("-clock-")) return "ながいはりをみてから、みじかいはりをみましょう。";
+    if (id.includes("-shape-")) return "かどのかずや、せんのようすをみましょう。";
+    if (id.includes("-money-")) return "おなじおかねをまとめて、たしましょう。";
+    if (id.includes("-len-")) return "ふたつのかずをくらべましょう。";
+    if (id.includes("-num-")) return "10のまとまりと、ばらのかずをみましょう。";
+    if (id.includes("-table-")) return "ひょうのなかのかずを、ふたつみつけましょう。";
+    return "ずやひょうのかずをみて、けいさんをきめましょう。";
   }
 
   function kanaShift(kana, offset) {
